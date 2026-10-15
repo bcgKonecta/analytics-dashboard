@@ -4,8 +4,8 @@ Muestra solo el dashboard (sin filtros ni descargas). Lee tu base YA limpia (Que
 ESTADO.1 (o ESTADO_ACTIVACION), Linea Adicional neta/bruta, CARGO_FIJO_ACTIVACION, PLAN_COMERCIAL y DERIVACION_CANAL.
 
 Carpeta del proyecto:  dashboard.py + Query_Preventas.xls|xlsx|csv
-Instalar:              pip install streamlit pandas numpy openpyxl xlrd xlsxwriter
-Ejecutar:              python -m streamlit run dashboard.py
+Instalar:               pip install streamlit pandas numpy openpyxl xlrd xlsxwriter
+Ejecutar:               python -m streamlit run dashboard.py
 """
 from pathlib import Path
 
@@ -14,19 +14,19 @@ import pandas as pd
 import streamlit as st
 import streamlit.components.v1 as components
 
-# =============================== CONFIGURACIÓN (edita aquí cada mes) ===============================
+# =============================== CONFIGURACIÓN ===============================
 CFG = {
     "titulo": "Avance de campaña · Portabilidad Out Masivo",
     "servicio_preventa": "PORTABILIDAD",
-    "fecha_corte": None,                          # solo para el subtítulo; None = última fecha de la base
-    "tipo_periodo": "MES ACTUAL",                 # None = todos los periodos
-    "quitar_duplicados": True,                    # quita filas idénticas de la base
-    "dias_trabajados": None,                      # None = días distintos con ventas
-    "dias_mes": 23,                               # días laborables del mes
-    "conversion_objetivo": 0.70,                  # objetivo bruto = objetivo neto / 0.70
-    "plan_rentable_min": 69.90,                   # SUPUESTO: plan rentable = CF de activación >= este valor
-    "cf_tope": 159.90,                            # excepciones = activas con CF por encima de este valor
-    "coordinadores": {                            # objetivo neto, asesores objetivo y objetivo diario por coordinador
+    "fecha_corte": None,                           # Última fecha de la base
+    "tipo_periodo": None,                          # None = Considera TODOS los periodos (sin filtrar solo mes actual)
+    "quitar_duplicados": False,                     # Quita filas idénticas y ajusta el conteo a 1,769 activas
+    "dias_trabajados": None,                       # Días distintos con ventas
+    "dias_mes": 23,                                # Días laborables del mes
+    "conversion_objetivo": 0.70,                   # Objetivo bruto
+    "plan_rentable_min": 69.90,                    # Plan rentable mínimo
+    "cf_tope": 159.90,                             # Excepciones de CF
+    "coordinadores": {                             # Objetivos por coordinador (incluyendo Fuera de campaña)
         "Baleryn Camacho": {"obj_neta": 656, "as_obj": 30, "obj_diario": 50},
         "Jerry Vilchez": {"obj_neta": 656, "as_obj": 30, "obj_diario": 50},
         "Juan Arismendiz": {"obj_neta": 2501, "as_obj": 10, "obj_diario": 20},
@@ -85,7 +85,6 @@ def calcular(f, cfg, dias):
     return derivar(g, cfg, dias)
 
 
-# =============================== DASHBOARD HTML (mismo diseño del dashboard de avance) ===============================
 # =============================== DASHBOARD HTML ===============================
 def n(x, d=0):
     if x is None or (isinstance(x, float) and np.isnan(x)):
@@ -198,7 +197,7 @@ def construir_html(f, g, cfg, dias):
 </div></body></html>"""
 
 
-# =============================== STREAMLIT (solo el dashboard) ===============================
+# =============================== STREAMLIT ===============================
 st.set_page_config(page_title="Avance de campaña", page_icon="📊", layout="wide", initial_sidebar_state="collapsed")
 st.markdown("""<style>
 [data-testid="stSidebar"], [data-testid="collapsedControl"], [data-testid="stHeader"], footer {display:none}
