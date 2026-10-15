@@ -20,8 +20,8 @@ CFG = {
     "servicio_preventa": "PORTABILIDAD",
     "fecha_corte": None,                           # Última fecha de la base
     "tipo_periodo": None,                          # None = Considera TODOS los periodos (sin filtrar solo mes actual)
-    "quitar_duplicados": False,                     # Quita filas idénticas y ajusta el conteo a 1,769 activas
-    "dias_trabajados": None,                       # Días distintos con ventas
+    "quitar_duplicados": False,                    # Mantiene todas las filas (1,781 activas)
+    "dias_trabajados": 13,                       # Días distintos con ventas
     "dias_mes": 23,                                # Días laborables del mes
     "conversion_objetivo": 0.70,                   # Objetivo bruto
     "plan_rentable_min": 69.90,                    # Plan rentable mínimo
@@ -116,21 +116,28 @@ def barras(items, total):
 
 
 def grafico_diario(f):
-    d = f.groupby(f["FECHA_EVALUACION"].dt.date).agg(b=("_b", "sum"), a=("_n", "sum"))
+    act_df = f[(f["estado"] == "Activo") & f["FECHA_ACTIVACION"].notna()]
+    if act_df.empty:
+        return ""
+    d = act_df.groupby(act_df["FECHA_ACTIVACION"].dt.date).size().reset_index(name="cant")
     if d.empty:
         return ""
-    mx, k = d["b"].max(), len(d)
+    mx, k = d["cant"].max(), len(d)
+    if mx == 0:
+        return ""
     paso = 600 / k
     s = ""
-    for i, (fecha, r) in enumerate(d.iterrows()):
+    for i, r in d.iterrows():
         x = i * paso + 2
-        w = max(paso / 2 - 3, 2)
-        hb, ha = 170 * r["b"] / mx, 170 * r["a"] / mx
-        s += (f'<rect x="{x:.1f}" y="{180 - hb:.1f}" width="{w:.1f}" height="{hb:.1f}" fill="#B8C4CC"/>'
-              f'<rect x="{x + w + 1:.1f}" y="{180 - ha:.1f}" width="{w:.1f}" height="{ha:.1f}" fill="#0F766E"/>')
+        w = max(paso - 4, 2)
+        ha = 140 * r["cant"] / mx
+        y_rect = 175 - ha
+        y_text = y_rect - 6
+        s += (f'<rect x="{x:.1f}" y="{y_rect:.1f}" width="{w:.1f}" height="{ha:.1f}" fill="#0F766E"/>'
+              f'<text x="{x + w/2:.1f}" y="{y_text:.1f}" font-size="9" text-anchor="middle" fill="#0F766E">{r["cant"]}</text>')
         if k <= 16 or i % 2 == 0:
-            s += f'<text x="{x + w:.1f}" y="198" font-size="10" text-anchor="middle" fill="#5B6B76">{fecha.strftime("%d/%m")}</text>'
-    return f'<svg viewBox="0 0 600 205" style="width:100%;height:auto" role="img" aria-label="Ventas diarias brutas y activas">{s}</svg>'
+            s += f'<text x="{x + w/2:.1f}" y="198" font-size="10" text-anchor="middle" fill="#5B6B76">{r["FECHA_ACTIVACION"].strftime("%d/%m")}</text>'
+    return f'<svg viewBox="0 0 600 205" style="width:100%;height:auto" role="img" aria-label="Ventas activas diarias">{s}</svg>'
 
 
 CSS = """body{margin:0}.card{background:#fff;border:1px solid #E1E6EA;border-radius:12px;padding:20px;min-width:0}
@@ -190,7 +197,7 @@ def construir_html(f, g, cfg, dias):
 <div><p class="lbl" style="margin:0">{cfg['servicio_preventa'].title()} · corte {corte} · {n(dias, 1)} de {cfg['dias_mes']} días trabajados</p>
 <h1 style="margin:2px 0 0;font-size:28px">{cfg['titulo']}</h1></div>
 <div class="grid k">{kp}</div>
-<div class="grid"><div class="card" style="grid-column:span 2"><p class="lbl">Ventas diarias: brutas (gris) y activas (verde)</p>{grafico_diario(f)}</div>
+<div class="grid"><div class="card" style="grid-column:span 2"><p class="lbl">Ventas activas diarias (por fecha de activación)</p><div style="padding-top:10px">{grafico_diario(f)}</div></div>
 <div class="card"><p class="lbl">Estado de ventas brutas</p><div style="display:flex;flex-direction:column;gap:14px;font-size:14px">{estados}</div></div></div>
 {t_brutas}{t_netas}{t_prod}
 <div class="grid">{t_kon}<div class="card"><p class="lbl">Ventas netas por canal</p><div style="display:flex;flex-direction:column;gap:14px;font-size:14px">{canales}</div></div></div>
@@ -213,6 +220,8 @@ def leer():
     df = pd.read_csv(ruta) if ruta.suffix == ".csv" else pd.read_excel(ruta)
     df.columns = df.columns.str.strip()
     df["FECHA_EVALUACION"] = pd.to_datetime(df["FECHA_EVALUACION"])
+    if "FECHA_ACTIVACION" in df.columns:
+        df["FECHA_ACTIVACION"] = pd.to_datetime(df["FECHA_ACTIVACION"], errors="coerce")
     for c in ["CARGO_FIJO", "CARGO_FIJO_ACTIVACION"]:
         df[c] = pd.to_numeric(df[c], errors="coerce")
     df["estado"] = df["ESTADO.1"] if "ESTADO.1" in df else df["ESTADO_ACTIVACION"].map(ESTADOS)
