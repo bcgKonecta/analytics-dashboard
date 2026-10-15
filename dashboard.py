@@ -1,13 +1,12 @@
 """Dashboard de avance de campaña en Streamlit (un solo archivo).
 
-Lee tu base YA limpia (Query_Preventas) tal como viene de MySQL: usa sus columnas Coordinador, Supervisor,
+Muestra solo el dashboard (sin filtros ni descargas). Lee tu base YA limpia (Query_Preventas) tal como viene de MySQL: usa sus columnas Coordinador, Supervisor,
 ESTADO.1 (o ESTADO_ACTIVACION), Linea Adicional neta/bruta, CARGO_FIJO_ACTIVACION, PLAN_COMERCIAL y DERIVACION_CANAL.
 
 Carpeta del proyecto:  dashboard.py + Query_Preventas.xls|xlsx|csv
 Instalar:              pip install streamlit pandas numpy openpyxl xlrd xlsxwriter
 Ejecutar:              python -m streamlit run dashboard.py
 """
-from io import BytesIO
 from pathlib import Path
 
 import numpy as np
@@ -20,6 +19,9 @@ CFG = {
     "titulo": "Avance de campaña · Portabilidad Out Masivo",
     "servicio_preventa": "PORTABILIDAD",
     "fecha_corte": None,                          # solo para el subtítulo; None = última fecha de la base
+    "tipo_periodo": "MES ACTUAL",                 # None = todos los periodos
+    "quitar_duplicados": True,                    # quita filas idénticas de la base
+    "dias_trabajados": None,                      # None = días distintos con ventas
     "dias_mes": 23,                               # días laborables del mes
     "conversion_objetivo": 0.70,                  # objetivo bruto = objetivo neto / 0.70
     "plan_rentable_min": 69.90,                   # SUPUESTO: plan rentable = CF de activación >= este valor
@@ -196,21 +198,20 @@ def construir_html(f, g, cfg, dias):
 </div></body></html>"""
 
 
-# =============================== STREAMLIT ===============================
-st.set_page_config(page_title="Avance de campaña", page_icon="📊", layout="wide")
+# =============================== STREAMLIT (solo el dashboard) ===============================
+st.set_page_config(page_title="Avance de campaña", page_icon="📊", layout="wide", initial_sidebar_state="collapsed")
+st.markdown("""<style>
+[data-testid="stSidebar"], [data-testid="collapsedControl"], [data-testid="stHeader"], footer {display:none}
+.block-container {padding:0 !important; max-width:100% !important}
+</style>""", unsafe_allow_html=True)
 
 
 @st.cache_data(show_spinner="Leyendo la base...")
-def leer(nombre: str, contenido: bytes | None):
-    if contenido is not None:
-        import io
-        fuente = io.BytesIO(contenido)
-        df = pd.read_csv(fuente) if nombre.lower().endswith(".csv") else pd.read_excel(fuente)
-    else:
-        ruta = next((r for ext in ("xlsx", "xls", "csv") if (r := Path(__file__).parent / f"Query_Preventas.{ext}").exists()), None)
-        if ruta is None:
-            return None
-        df = pd.read_csv(ruta) if ruta.suffix == ".csv" else pd.read_excel(ruta)
+def leer():
+    ruta = next((r for ext in ("xlsx", "xls", "csv") if (r := Path(__file__).parent / f"Query_Preventas.{ext}").exists()), None)
+    if ruta is None:
+        return None
+    df = pd.read_csv(ruta) if ruta.suffix == ".csv" else pd.read_excel(ruta)
     df.columns = df.columns.str.strip()
     df["FECHA_EVALUACION"] = pd.to_datetime(df["FECHA_EVALUACION"])
     for c in ["CARGO_FIJO", "CARGO_FIJO_ACTIVACION"]:
@@ -219,61 +220,27 @@ def leer(nombre: str, contenido: bytes | None):
     coord = df["Coordinador"].astype("string").str.strip()
     df["coordinador"] = coord.where(coord.str.upper() != "FUERA DE CAMPAÑA", CFG["fuera"])
     df["grupo"] = df["coordinador"].where(df["coordinador"].isin(CFG["coordinadores"]), CFG["fuera"])
-    df["supervisor"] = df["Supervisor"].astype("string").str.strip().fillna("Sin supervisor")
     df["usuario"] = df["E_REAL_FINAL"] if "E_REAL_FINAL" in df else df["VENTA_USUARIO"]
     return df
 
 
-subido = st.sidebar.file_uploader("Carga Query_Preventas (opcional)", type=["xls", "xlsx", "csv"])
-df = leer(subido.name, subido.getvalue()) if subido else leer("", None)
+df = leer()
 if df is None:
-    st.error("No encuentro Query_Preventas.xls/.xlsx/.csv junto a dashboard.py. Cárgalo desde la barra lateral.")
+    st.error("No encuentro Query_Preventas.xls/.xlsx/.csv junto a dashboard.py.")
     st.stop()
 
-st.sidebar.header("Filtros")
-quitar_dup = st.sidebar.checkbox("Quitar filas duplicadas", value=True)
-if quitar_dup:
+if CFG["quitar_duplicados"]:
     cols = [c for c in df.columns if c not in ("ESTADO.1", "Linea Adicional neta", "LINEA ADICIONAL bruta")]
     df = df.drop_duplicates(subset=cols)
 
-periodos = sorted(df["TIPO_PERIODO"].dropna().unique())
-servicios = sorted(df["SERVICIO"].dropna().unique())
-grupos = [x for x in list(CFG["coordinadores"]) + [CFG["fuera"]] if x in set(df["grupo"])]
-sups = sorted(df["supervisor"].unique())
-estados = ["Activo", "En Proceso", "Entregado", "Caida"]
-sel_p = st.sidebar.multiselect("Periodo:", periodos, default=[p for p in periodos if p == "MES ACTUAL"] or periodos)
-sel_srv = st.sidebar.multiselect("Servicio:", servicios, default=[s for s in servicios if s == CFG["servicio_preventa"]] or servicios)
-sel_g = st.sidebar.multiselect("Coordinador:", grupos, default=grupos)
-sel_s = st.sidebar.multiselect("Supervisor:", sups, default=sups)
-sel_e = st.sidebar.multiselect("Estado:", estados, default=estados)
-
-f = df[df["TIPO_PERIODO"].isin(sel_p) & df["SERVICIO"].isin(sel_srv) & df["grupo"].isin(sel_g)
-       & df["supervisor"].isin(sel_s) & df["estado"].isin(sel_e)]
+f = df[df["SERVICIO"] == CFG["servicio_preventa"]]
+if CFG["tipo_periodo"]:
+    f = f[f["TIPO_PERIODO"] == CFG["tipo_periodo"]]
 if f.empty:
-    st.warning("Los filtros no dejan ninguna venta.")
+    st.error("No hay ventas con el servicio y el periodo configurados en CFG.")
     st.stop()
 f = f.assign(_b=1, _n=(f["estado"] == "Activo").astype(int))
 
-st.sidebar.header("Parámetros")
-dias_mes = st.sidebar.number_input("Días del mes", 1, 31, int(CFG["dias_mes"]))
-dias = st.sidebar.number_input("Días trabajados", 0.5, 31.0, float(f["FECHA_EVALUACION"].dt.date.nunique()), step=0.5)
-cfg = {**CFG, "dias_mes": dias_mes}
-
-g = calcular(f, cfg, dias)
-sin_doc = df["NRO DOCUMENTO CLIENTE"].isna().mean() if "NRO DOCUMENTO CLIENTE" in df else 0
-if sin_doc > 0.10:
-    st.warning(f"{sin_doc:.0%} de las ventas no tiene documento: las líneas adicionales (vienen de tu SQL) pueden estar subestimadas.")
-
-html = construir_html(f, g, cfg, dias)
-components.html(html, height=2300, scrolling=True)
-
-with st.expander("Ver base filtrada"):
-    st.dataframe(f.drop(columns=["_b", "_n"]))
-
-out = BytesIO()
-with pd.ExcelWriter(out, engine="xlsxwriter") as w:
-    f.drop(columns=["_b", "_n"]).to_excel(w, index=False, sheet_name="Data_Filtrada")
-    g.drop(columns=["cf_sum_b", "cf_sum_n"]).reset_index(names="coordinador").to_excel(w, index=False, sheet_name="Resumen")
-st.sidebar.download_button("📥 Descargar Excel filtrado", out.getvalue(), "Reporte_Preventas_Filtrado.xlsx",
-                           mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-st.sidebar.download_button("📥 Descargar dashboard (HTML)", html.encode("utf-8"), "dashboard_avance.html", mime="text/html")
+dias = CFG["dias_trabajados"] or float(f["FECHA_EVALUACION"].dt.date.nunique())
+g = calcular(f, CFG, dias)
+components.html(construir_html(f, g, CFG, dias), height=2300, scrolling=True)
