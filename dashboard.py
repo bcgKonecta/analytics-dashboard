@@ -21,8 +21,8 @@ CFG = {
     "fecha_corte": None,                           # Última fecha de la base
     "tipo_periodo": None,                          # None = Considera TODOS los periodos (sin filtrar solo mes actual)
     "quitar_duplicados": False,                    # Mantiene todas las filas (1,781 activas)
-    "dias_trabajados": 13,                       # Días distintos con ventas
-    "dias_mes": 23,                                # Días laborables del mes
+    "dias_trabajados": 10,                        # Días distintos con ventas
+    "dias_mes": 24,                                # Días laborables del mes
     "conversion_objetivo": 0.70,                   # Objetivo bruto
     "plan_rentable_min": 69.90,                    # Plan rentable mínimo
     "cf_tope": 159.90,                             # Excepciones de CF
